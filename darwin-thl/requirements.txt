@@ -1,0 +1,7 @@
+darwinexapis
+pandas
+numpy
+scipy
+pyarrow
+python-dotenv
+matplotlib
