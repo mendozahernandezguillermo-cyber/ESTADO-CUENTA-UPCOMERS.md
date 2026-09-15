@@ -309,3 +309,115 @@ python3 control_m1.py                # el de antes, para contrastar
 cd ../mql5
 python3 verificar_mql5.py Medir_Swap_Unidades.mq5
 ```
+
+
+---
+
+## 9. Sustituir a EA_Trend_Multi: las dos vías cerradas y la que queda
+
+Solo con el FOMC hacen falta **~17 meses** para juntar los 6 días cualificados:
+8 eventos al año × 53% que alcanzan el TP = 4,24 días/año. La premisa es
+correcta y ésta es la aritmética.
+
+### Lo que ya estaba refutado en el propio repositorio
+
+Recomendé dos veces multiplicar eventos con IPC y empleo. **Estaba medido y
+refutado, y no lo comprobé antes de recomendarlo.** `fomc/eventos_830.py` y
+`fomc/bancos_centrales.py`:
+
+```
+IPC + empleo (n=351)     -5,0 bp   t=-1,17   NO GENERALIZA
+  empleo solo (n=177)   -12,9 bp   t=-2,31   negativo
+BoJ -> Nikkei (n=128)    -5,3 bp   t=-0,83   falla la diagonal
+NASDAQ -> Fed            +20,7 bp   t=+3,38   la unica que funciona
+```
+
+El diseño 2×2 de `bancos_centrales.py` es concluyente: las tres celdas fuera de
+la diagonal salen planas, como debían, y la diagonal del BoJ **falla**. No es
+una «prima por evento programado»: es específico de la Fed sobre el NASDAQ, y
+sigue sin mecanismo conocido. La vía de multiplicar eventos está cerrada.
+
+### El trend no hay que sustituirlo, hay que quitarle la plata
+
+`trend/trend_bajo_carry.py`. Primero, el carry no se compara por nocional sino
+**por unidad de riesgo**, porque la estrategia dimensiona por volatilidad
+objetivo y un instrumento tranquilo necesita más nocional:
+
+| mercado | swap/año | vol | swap/vol |
+|---|---|---|---|
+| **Plata** | 30,0% | 33,3% | **0,900** |
+| S&P 500 | 6,4% | 18,9% | 0,338 |
+| Oro | 3,2% | 18,2% | 0,175 |
+| EUR/USD | 1,8% | 11,0% | 0,164 |
+| GBP/USD | 1,0% | 9,2% | 0,108 |
+| USD/JPY | 1,0% | 11,5% | 0,087 |
+| AUD/USD | 1,0% | 12,3% | 0,081 |
+
+Ese reorden importa: el oro paga casi el doble que EUR/USD sobre nocional y
+**cuesta lo mismo por unidad de riesgo**.
+
+| universo | n | Sharpe | t | carry $/año | neto $/año |
+|---|---|---|---|---|---|
+| B completo | 7 | 0,74 | 4,21 | −568 | +260 |
+| **B sin plata** | **6** | **0,74** | **4,21** | **−336** | **+493** |
+| divisas + oro | 5 | 0,33 | 1,84 | −230 | +144 |
+| solo divisas | 4 | 0,21 | 1,15 | −194 | +40 |
+
+**Quitar la plata es gratis.** El Sharpe con 7 y con 6 es 0,735586 contra
+0,736707 — comprobado con decimales porque parecía un fallo parcial silencioso
+de los de la Fase 6.3, y no lo es: las siete series están cargadas. La plata no
+aporta señal y cuesta 232 $/año.
+
+**Seguir quitando no es gratis.** Con solo divisas el Sharpe se hunde de 0,74 a
+0,21. La diversificación entre clases es lo que hace funcionar al trend, así que
+«solo divisas, que son las baratas» queda descartado por medición.
+
+### Y los días cualificados
+
+| configuración | días/año | con el FOMC | meses a 6 días |
+|---|---|---|---|
+| solo FOMC | 0,0 | 4,2 | **17,0** |
+| B sin plata | 9,4 | 13,6 | **5,3** |
+
+Los días cualificados los da la **volatilidad**, no la ventaja: todos los
+universos escalados a 4,5% dan 9,0-9,8 días/año independientemente de su Sharpe.
+
+## 10. Pero antes hay que resolver una contradicción del repositorio
+
+La tabla de arriba supone que el día cualificado se cuenta por **cambio de
+equity**, que es lo que hace el modelo:
+
+```
+planes/cobros_reales.py:225   cual += (vivo & (pnl >= 0.005*CUENTA))
+                        219   bal = np.where(vivo, eqf, bal)     -> marca a mercado
+```
+
+La Fase 13 razona lo contrario: dice que la pata continua «casi no realiza
+beneficio ningún día» y que eso es «una ventaja estructural». Eso solo tiene
+sentido si la regla mira el **realizado**.
+
+| lectura | qué aporta el trend | consecuencia |
+|---|---|---|
+| por equity | los 9,4 días de la tabla | 5,3 meses, y aprieta la regla del 20% |
+| por realizado | techo de ~12 días (rebalancea 1×mes), realista 2-3 | la tabla es papel mojado |
+
+Es la Fase 12 —«léelas, no las deduzcas»— y la Fase 9 —«verifica solo contra
+puntos donde las hipótesis divergen»—. **Se resuelve gratis mirando el panel de
+la firma tras un día con la equity arriba y nada cerrado.** Hasta entonces no se
+sabe si el sustituto tiene que mantener volatilidad o tiene que cerrar
+operaciones a menudo, y son dos EAs distintos.
+
+### Y el intercambio, dicho entero
+
+La Fase 15 comparó las dos configuraciones con la mecánica de cobro dentro:
+
+```
+sin plata   : recibido a 4 años 233 $ · P(cobra) 50,0% · P(quema) 7,0%
+solo el FOMC: recibido a 4 años 509 $ · P(cobra) 89,5% · P(quema) 0,0%
+```
+
+Con el objetivo «maximizar lo recibido a 4 años» el FOMC solo gana, y la
+decisión de la Fase 15 era correcta. Lo que cambia es el objetivo: si lo que
+aprieta es el **tiempo hasta el primer cobro**, la pata sin plata pasa de 17
+meses a ~5. Es un intercambio real, no un almuerzo gratis: se paga con **7
+puntos de probabilidad de ruina**.
