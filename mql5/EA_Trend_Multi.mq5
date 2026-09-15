@@ -162,10 +162,20 @@ input group           "=== La cesta ==="
 //    NACUSD / SPXUSD / GRXEUR / UKXGBP, y el sufijo ".c" es de la casa.
 //    Si algun nombre no existe, el informe de arranque lo dira y basta con
 //    corregir esta cadena en la pestaña Inputs: no hay que recompilar.
-input string          InpSimbolos        = "SPCUSD.c,NACUSD.c,XAUUSD,XAGUSD,EURUSD,USDJPY,GBPUSD,AUDUSD"; // Lista separada por comas
+//--- PLATA FUERA (2026-09-15). Medido en trend/trend_bajo_carry.py sobre 5.071
+//    dias con los siete mercados presentes: quitar XAGUSD deja el Sharpe igual
+//    (0,47 con plata, 0,47 sin ella; t 2,09 -> 2,11) y recorta el carry de
+//    -672 a -387 $/año, con lo que el neto pasa de -148 a +141 $/año. La plata
+//    pagaba el 30% anual sobre nocional, y por unidad de RIESGO costaba 0,900
+//    contra 0,081 de AUD/USD: no aportaba señal, solo swap.
+//    Seguir quitando NO es gratis: con solo divisas el Sharpe cae a 0,21.
+input string          InpSimbolos        = "SPCUSD.c,NACUSD.c,XAUUSD,EURUSD,USDJPY,GBPUSD,AUDUSD"; // Lista separada por comas
 input int             InpMinMercados     = 6;      // Minimo de mercados con datos para operar
 input bool            InpEmpalmarSenal   = true;   // Empalmar con cierres de referencia si falta historial
-input int             InpMercadosRef     = 8;      // Divisor de referencia (mantiene la vol si falta alguno)
+//--- Baja de 8 a 7 con la plata fuera. Si se quedase en 8, el divisor
+//    max(activos, ref) dejaria la exposicion permanentemente en 7/8 del
+//    objetivo: una desactivacion silenciosa del 12,5% del riesgo.
+input int             InpMercadosRef     = 7;      // Divisor de referencia (mantiene la vol si falta alguno)
 
 input group           "=== Señal y dimensionado ==="
 input int             InpMesesMirada     = 12;     // Meses de retorno para la señal
