@@ -158,16 +158,24 @@ print()
 print(E)
 print("2. CADA UNIVERSO: SEÑAL, CARRY Y NETO")
 print(E)
-print("  %-20s%5s%9s%8s%9s%10s%10s" %
-      ("universo", "n", "Sharpe", "t", "vol", "carry $", "neto $"))
-print("  " + "-" * 72)
+print("  %-20s%5s%7s%8s%7s%8s%9s%9s" %
+      ("universo", "n", "dias", "Sharpe", "t", "vol", "carry $", "neto $"))
+print("  " + "-" * 74)
 
 RES = {}
 for etq, uni in UNIVERSOS:
     uni = [m for m in uni if m in SERIES]
     if len(uni) < 2:
         continue
-    D = pd.DataFrame({m: SERIES[m] for m in uni}).dropna(how="all")
+    # FALLO CORREGIDO. La primera version hacia dropna(how="all") y promediaba,
+    # asi que las fechas en que solo cotizaba el S&P (1995-2005) entraban con
+    # una cartera de UN mercado. Eso inflaba el Sharpe y hacia incomparables los
+    # universos entre si. trend_cfd.py evita esto con MIN_MERCADOS=6.
+    # Aqui se exige que TODOS los mercados del universo tengan dato, con lo que
+    # todos los universos arrancan en la misma fecha (2006-05, que es cuando
+    # empiezan Plata y AUD/USD) y la comparacion es homologable.
+    D = pd.DataFrame({m: SERIES[m] for m in uni})
+    D = D[D.notna().all(axis=1)]
     serie = D.mean(axis=1).dropna()
     r = resumen(serie)
 
@@ -182,8 +190,8 @@ for etq, uni in UNIVERSOS:
     bruto = CUENTA * r["mu"] * lev
     RES[etq] = dict(uni=uni, serie=serie, lev=lev, sh=r["sh"], t=r["t"],
                     sd=r["sd"] * lev, carry=carry, bruto=bruto)
-    print("  %-20s%5d%9.2f%8.2f%8.1f%%%10.0f%10.0f"
-          % (etq, len(uni), r["sh"], r["t"], r["sd"] * lev * 100,
+    print("  %-20s%5d%7d%8.2f%7.2f%6.1f%%%9.0f%9.0f"
+          % (etq, len(uni), len(serie), r["sh"], r["t"], r["sd"] * lev * 100,
              -carry, bruto - carry))
 
 print()

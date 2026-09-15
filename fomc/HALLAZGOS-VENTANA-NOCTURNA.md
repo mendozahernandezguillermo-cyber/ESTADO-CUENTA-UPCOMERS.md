@@ -421,3 +421,121 @@ decisión de la Fase 15 era correcta. Lo que cambia es el objetivo: si lo que
 aprieta es el **tiempo hasta el primer cobro**, la pata sin plata pasa de 17
 meses a ~5. Es un intercambio real, no un almuerzo gratis: se paga con **7
 puntos de probabilidad de ruina**.
+
+
+---
+
+## 11. Corrección al apartado 9, y sobre qué cuenta está hecho todo esto
+
+### El fallo
+
+La tabla del apartado 9 daba Sharpe 0,74 y t=4,21. **Estaba mal.** Promediaba con
+`dropna(how="all")`, así que las fechas en que solo cotizaba el S&P (1995-2005)
+entraban como una cartera de un solo mercado, lo que infla el Sharpe y hace
+incomparables los universos entre sí. `trend_cfd.py` lo evita con
+`MIN_MERCADOS = 6` y yo no puse el filtro.
+
+Corregido exigiendo que **todos** los mercados del universo tengan dato, con lo
+que todos arrancan en 2006-05:
+
+| universo | días | Sharpe | t | carry $/año | neto $/año |
+|---|---|---|---|---|---|
+| B completo (7) | 5071 | 0,47 | 2,09 | −672 | **−148** |
+| **B sin plata (6)** | 5071 | **0,47** | **2,11** | −387 | **+141** |
+| divisas + oro (5) | 5071 | 0,31 | 1,37 | −275 | +69 |
+| solo divisas (4) | 5257 | 0,21 | 0,97 | −220 | +20 |
+
+La conclusión no cambia y ahora **coincide con la Fase 15**, que daba +156 $/año
+para «sin plata» por un camino distinto. Yo doy +141. Quitar la plata sigue
+siendo gratis en señal (0,47 → 0,47) y es lo que pone el neto en positivo.
+
+Lo que sí cambia es la fuerza de la pata: **Sharpe 0,47 con t=2,11 sobre 20
+años**, no 0,74 con t=4,21. Es marginal, y conviene tenerlo presente antes de
+apoyarse en ella.
+
+### Aplicado al EA
+
+`mql5/EA_Trend_Multi.mq5`:
+
+```
+InpSimbolos    = "SPCUSD.c,NACUSD.c,XAUUSD,EURUSD,USDJPY,GBPUSD,AUDUSD"
+InpMercadosRef = 7      (era 8)
+```
+
+`InpMercadosRef` tiene que bajar a 7. Si se queda en 8, el divisor
+`max(activos, ref)` deja la exposición permanentemente en 7/8 del objetivo: una
+desactivación silenciosa del 12,5% del riesgo, que es justo la clase de error de
+dirección de la Fase 9. `XAGUSD` se queda en `REF_SIMBOLO`/`REF_CIERRE` porque
+es solo tabla de consulta para el empalme y ya no se consulta.
+
+**Aviso:** con la plata fuera quedan 7 en la lista, y `NACUSD.c` se omite por
+granularidad en una cuenta de 25K, así que operan **6** con `InpMinMercados = 6`.
+Margen cero: si falla un símbolo, el EA deja de operar. Falla en cerrado, que es
+lo correcto, pero conviene saberlo.
+
+Y una decisión pendiente que no he tocado porque no se pidió: `trend/sin_nasdaq.py`
+mide que sacar `NACUSD.c` cuesta **0,61% anual con t=2,12** y las carteras
+correlacionan 0,9711 — por su propio criterio (>0,99 y sin `t`) **no es gratis**.
+Pero hay que sacarlo igual por cumplimiento: si el trend se pone corto en
+`NACUSD.c` y llega un FOMC, la pata #1 abre un largo en el mismo símbolo, que es
+lo que Upcomers prohíbe. Hoy no ocurre porque la granularidad lo omite.
+
+### Sobre qué cuenta está hecho todo esto: **Upcomers, sin excepción**
+
+Todas las constantes salen de `ESTADO-CUENTA-UPCOMERS.md` y de
+`planes/cobros_reales.py`:
+
+```
+CUENTA 25.000 · riesgo 1,10% · stop 80 bp · spread 1,37 bp · swap 6,4%
+MIN_DIAS=6 · MIN_BEN=0,005 · BEST=0,20        <- regla de consistencia Upcomers
+TOPES = 250, 500, 750, 1000, 1250, 1560, 1875 <- topes escalonados Upcomers
+limite 2% por operacion (hard breach)         <- Upcomers
+vol optima 4,5%                               <- Fase 12, instant funding
+```
+
+**En FTMO 2-Step casi nada de eso aplica**, y lo tienes medido en
+`planes/ftmo_2step.py`:
+
+| | Upcomers Vanguard | FTMO 2-Step |
+|---|---|---|
+| días mínimos | **6, cada uno ≥ +0,5%** | **4 por fase, sin umbral diario** |
+| topes de cobro | escalonados 250→1875 | **ninguno** |
+| regla del mejor día | 20% | **ninguna** |
+| pérdida máxima | trailing 7% sobre el pico | **10% estática** sobre el inicial |
+| objetivo antes de cobrar | ninguno | **+10% y luego +5%** |
+
+**El problema de los 17 meses es una regla de Upcomers, no de FTMO.** En FTMO no
+existe el día cualificado, así que el apartado 10 —la contradicción entre contar
+por equity o por realizado— **deja de importar**. Lo que aprieta es el objetivo.
+
+Y con ello cambia la volatilidad óptima, que es la Fase 8 al pie de la letra
+(«la volatilidad óptima es propiedad de la firma, no tuya»):
+
+```
+   vol   riesgo/ev   P(pasa las 2)   hasta fondear   EV/año   P(quema tras fondear)
+  4,5%      1,47%        96,9%            2,5a         214$          0,0%
+  7,0%      2,29%        88,6%            1,4a         863$         13,3%
+ 10,0%      3,28%        77,6%            0,8a       1.248$         50,4%
+ 14,0%      4,59%        56,8%            0,4a         879$         92,1%
+
+  Upcomers Vanguard 7% (en vivo)                        269$
+```
+
+FTMO al 7% de vol rinde **3,2 veces** Upcomers; al 10%, 4,6 veces. Porque
+desaparece la pinza que confiscaba el 82%.
+
+### Las dos consecuencias que hay que sacar de aquí
+
+**La decisión sobre la plata es robusta al cambio de firma, y a mejor.** A 7-10%
+de vol el apalancamiento es 1,6-2,2× el de 4,5%, y el carry escala con él: la
+plata pasaría de −285 a −455/−633 $/año. Quitarla importa **más** en FTMO.
+
+**El dimensionado NO es robusto, y aquí me tienes que corregir el consejo.** Te
+dije «no subas el riesgo de 0,96% a 1,10% hasta medir el swap». Ese razonamiento
+es de Upcomers: el techo lo pone el **límite del 2% por operación**, que en FTMO
+no existe. La tabla de arriba pide 2,29-3,28% de riesgo por evento para que el
+reto tenga sentido, y eso en Upcomers sería breach instantáneo. La ventana
+«1,00%-1,20%» de la Fase 15 es **exclusivamente de Upcomers**.
+
+O sea que antes de seguir hay que fijar sobre qué cuenta se está optimizando,
+porque las dos respuestas son incompatibles, no matizadas.
