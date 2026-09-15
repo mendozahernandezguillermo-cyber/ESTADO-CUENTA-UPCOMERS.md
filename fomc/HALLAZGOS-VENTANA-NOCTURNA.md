@@ -225,10 +225,58 @@ convención (`sal = tp` arriba, `sal = o if o <= sl else sl` abajo). No hay nada
 que corregir ahí; el «mejor día 308 $» de la Fase 12 pertenece a la
 configuración de dos patas, ya retirada.
 
-**Discrepancia que queda abierta:** mi peor relleno realizado es **−99,0 bp**
-(1,36% de la cuenta) y la Fase 9 da **−133,4 bp** (1,84%). Las dos están dentro
-del límite del 2%, así que no cambia ninguna decisión, pero conviene saber si la
-diferencia es que la Fase 9 midió la peor *excursión* y no el relleno.
+## 8. Reconciliado: los −99,0 bp y los −133,4 bp de la Fase 9
+
+Mi peor relleno realizado sale **−99,0 bp** y la Fase 9 publica **−133,4 bp**,
+las dos supuestamente sobre los mismos M1 y los mismos 117 eventos. La causa es
+un solo número: **`mql5/riesgo_de_salto.py` línea 40 fija `TP_BP = 80.0`**. Esas
+cifras son de la configuración simétrica ±80, anterior a bajar el take profit.
+
+`reconcilia_fase9.py` cambia **solo** el TP en mi simulador y reproduce la
+Fase 9 entera:
+
+| magnitud | Fase 9 | este script (TP=80) | |
+|---|---|---|---|
+| salidas por stop | 9 | 9 | ✓ |
+| stops peor que −80 bp | 5 | 5 | ✓ |
+| deslizamiento máximo | 54,1 bp | 54,1 bp | ✓ |
+| deslizamiento medio | 19,7 bp | 19,7 bp | ✓ |
+| **peor evento** | **−133,4 bp** | **−133,4 bp** | ✓ |
+
+Cinco de cinco. Ninguna de las dos mediciones estaba mal: contestaban a
+configuraciones distintas.
+
+El residuo que faltaba —54,1 contra 53,4 bp— era la **definición** del
+deslizamiento. `riesgo_de_salto.py` lo mide contra el precio del stop
+(`sl/o − 1`) y yo lo medía contra el de entrada (`|ret| − 80`). Difieren en el
+término de composición. Usando la suya, cuadra al decimal.
+
+### Y el mecanismo, que sí es un hallazgo
+
+Todo se juega en un evento, **2022-01-26**, misma senda de precios:
+
+```
+con TP=40 :    +40,0 bp   salida por take profit
+con TP=80 :   -133,4 bp   salida por stop, 54,1 bp por debajo del nivel
+```
+
+Con el TP a 40 la posición **ya estaba cerrada cuando llegó el hueco**. Con el TP
+a 80 seguía abierta. Es el mismo mecanismo que ya se veía en la varianza, ahora
+en la cola: **el TP corto no solo trunca la cola buena, quita la mala**, porque
+saca la posición antes de la ventana de huecos.
+
+En la unidad que decide, el límite del 2% por operación:
+
+```
+TP=40 : peor evento  -99,0 bp = 1,36% de la cuenta  ->  margen 32%
+TP=80 : peor evento -133,4 bp = 1,83% de la cuenta  ->  margen  8%
+```
+
+Las dos aguantan con el riesgo al 1,10%, así que la discrepancia no cambiaba
+ninguna decisión. Pero **elegir el TP era también decidir sobre el hard breach**,
+y en la Fase 12 —donde el TP se eligió por la regla del mejor día y la
+probabilidad de cobro— eso no estaba contado. El TP de 40 se llevaba un tercer
+beneficio que nadie le había atribuido.
 
 ## Qué haría ahora, en orden
 
@@ -255,6 +303,7 @@ python3 hora_del_anuncio.py          # guardian de reloj -> horas_medidas.csv
 python3 ventana_nocturna.py          # la ventana viva, controles y rejilla
 python3 aleatorizacion_nocturna.py   # aleatorizacion + barrido + friccion
 python3 con_tp_y_stop.py             # lo que opera el EA: TP 40 / stop 80
+python3 reconcilia_fase9.py          # cierra el -99,0 contra el -133,4
 python3 control_m1.py                # el de antes, para contrastar
 
 cd ../mql5
