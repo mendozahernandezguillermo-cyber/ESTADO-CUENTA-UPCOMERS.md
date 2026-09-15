@@ -152,18 +152,94 @@ ahí; está en la nocturna. Son ventanas distintas y conviene no confundirlas.
 
 ---
 
+## 7. Con el TP y el stop puestos: la esquina positiva NO se cierra
+
+Todo lo anterior es el retorno de la ventana en bruto. `EA_FOMC_Gap` no opera
+eso: abre **largo** y deja `sl = −80 bp` y `tp = +40 bp` en el servidor. Con el
+TP a mitad de distancia que el stop la distribución queda truncada, así que hay
+que caminar la senda M1 barra a barra — truncar el cierre no vale, porque el TP
+se toca dentro de la noche.
+
+`con_tp_y_stop.py` lo simula con la asimetría que toca: el **stop** rellena en
+el open del hueco (peor que el nivel, que es lo que la Fase 9 midió) y el **TP**
+rellena en el nivel, porque es una orden límite y un hueco a favor no la mejora.
+Mi primera versión daba crédito por esos huecos favorables (16% de los eventos)
+e inflaba la media 4,9 bp.
+
+```
+                          pre-FOMC   control   exceso   2se
+sin TP ni stop               26,19      6,66    19,54  12,45
+con TP 40 / stop 80          15,71      0,64    15,07   8,06
+```
+
+El TP se come 4,47 bp de exceso **y a la vez recorta 2·se de 12,45 a 8,06**. Los
+dos efectos casi se cancelan:
+
+| | exceso | unid. swap | fricción | neto | `f` defendible |
+|---|---|---|---|---|---|
+| en bruto | +19,54 | 1 | 4,50 | +15,04 | +2,59 bp |
+| **con TP/stop** | **+15,07** | **1** | **4,50** | **+10,58** | **+2,52 bp** |
+| en bruto | +19,54 | 3 | 8,01 | +11,52 | f = 0 |
+| **con TP/stop** | **+15,07** | **3** | **8,01** | **+7,06** | **f = 0** |
+
+**Mi predicción era que el descuento del TP cerraría la única esquina positiva, y
+era falsa.** El TP no solo cuesta ventaja: compra precisión, y para la regla de
+dimensionado sale a tablas. La lectura de la Fase 12 —«un TP corto cuesta
+ventaja pero baja el listón»— está incompleta: también baja la varianza, que es
+la mitad del criterio.
+
+Y hay un motivo estructural detrás. Con las barreras puestas, el control de
+miércoles se derrumba de +6,66 a **+0,64 bp**, mientras el efecto pre-FOMC solo
+baja de 26,19 a 15,71. Las barreras filtran la prima overnight genérica —una
+deriva pequeña contra un stop del doble de distancia da esperanza ~0— y dejan
+pasar la del evento, que sí llega al TP. Se ve en los motivos de salida:
+
+```
+pre-FOMC   TP 53%   stop  7%   cierre 09:30 40%
+control    TP 42%   stop 14%   cierre 09:30 44%
+```
+
+Eso rehabilita en parte la medición original contra cero: **con el TP puesto,
+«contra cero» y «contra el control» casi coinciden**, porque el control es +0,64.
+
+### Robustez, y dos validaciones cruzadas que salen gratis
+
+| | pre-FOMC | control | exceso |
+|---|---|---|---|
+| completo | +15,71 | +0,64 | +15,07 |
+| recortado al 2% | +18,57 | +3,43 | +15,14 |
+| mediana | +40,00 | +15,28 | +24,72 |
+| solo noches con agujeros ≤ 60 min | +16,24 | +2,50 | +13,75 |
+
+No lo sostienen ni las colas ni los agujeros de datos. Y dos números que caen
+por su cuenta y confirman que la tubería está bien montada:
+
+- **36 de 117 eventos tienen agujeros de más de 60 minutos** (117 − 81). Es
+  exactamente la cifra que la Fase 9 midió por otro camino.
+- **El mejor día sale +137,50 $ = 0,550%** de la cuenta, que es literalmente el
+  «un acierto rinde 0,550%» de `ESTADO-CUENTA`. Y es una **constante**, no una
+  variable: con el TP capado, todo acierto rinde lo mismo.
+
+Comprobado además que `serie_s1` en `planes/cobros_reales.py` ya usa esta misma
+convención (`sal = tp` arriba, `sal = o if o <= sl else sl` abajo). No hay nada
+que corregir ahí; el «mejor día 308 $» de la Fase 12 pertenece a la
+configuración de dos patas, ya retirada.
+
+**Discrepancia que queda abierta:** mi peor relleno realizado es **−99,0 bp**
+(1,36% de la cuenta) y la Fase 9 da **−133,4 bp** (1,84%). Las dos están dentro
+del límite del 2%, así que no cambia ninguna decisión, pero conviene saber si la
+diferencia es que la Fase 9 midió la peor *excursión* y no el relleno.
+
 ## Qué haría ahora, en orden
 
-1. **Medir la unidad de swap.** Es el único dato que mueve el veredicto de `f=0`
-   a `f>0`, cuesta una semana y ya hay una posición abierta con la que medirlo.
+1. **Medir la unidad de swap.** Sigue siendo el único dato que mueve el veredicto
+   de `f=0` a `f>0`, y ahora se sabe que es el ÚNICO: el TP ya está descontado y
+   no cierra la esquina. Cuesta una semana y hay una posición abierta con la que
+   medirlo.
 2. **No tocar el riesgo hasta tenerlo.** La subida pendiente de 0,96% a 1,10%
    escala el nocional y con él el swap, así que mueve la fricción en la
    dirección mala justo en el margen que decide.
-3. **Medir la ventana CON el TP de 40 bp puesto.** Lo de arriba es el retorno de
-   la ventana en bruto; la Fase 12 ya midió que el TP corto cuesta ventaja
-   (19,4 → 15,4 bp) a cambio de probabilidad de cobro. Si ese descuento se
-   aplica al exceso de +19,54, la única esquina positiva también se cierra.
-4. Y solo entonces, la pregunta del EA. La familia tiene efecto real y
+3. Y solo entonces, la pregunta del EA. La familia tiene efecto real y
    verificado por dos diseños; lo que no tiene es muestra para dimensionarlo.
    Subir `n` no es cuestión de parámetros: es de eventos, y el candidato es el
    supuesto 2 de la especificación —IPC y empleo— que multiplica la frecuencia
@@ -178,6 +254,7 @@ cd fomc
 python3 hora_del_anuncio.py          # guardian de reloj -> horas_medidas.csv
 python3 ventana_nocturna.py          # la ventana viva, controles y rejilla
 python3 aleatorizacion_nocturna.py   # aleatorizacion + barrido + friccion
+python3 con_tp_y_stop.py             # lo que opera el EA: TP 40 / stop 80
 python3 control_m1.py                # el de antes, para contrastar
 
 cd ../mql5
