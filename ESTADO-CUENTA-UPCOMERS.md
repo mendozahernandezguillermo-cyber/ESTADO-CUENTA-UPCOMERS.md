@@ -8,7 +8,7 @@ memoria. Última medición: 9-sep-2026, 05:38 hora servidor.
 ## La cuenta
 
 ```
-login 1413252 · servidor Upcomers-Server (GMT+2) · modo Hedge
+login <el tuyo> · servidor Upcomers-Server (GMT+2) · modo Hedge
 saldo inicial 25.000 $ · trailing 7% RELATIVO al pico, se bloquea en 25.000
 diario 4% sobre el MAYOR de (saldo, equity) a las 00:00 UTC
 LIMITE POR OPERACION 2% = 500 $  ->  HARD BREACH, cierra la cuenta al instante
